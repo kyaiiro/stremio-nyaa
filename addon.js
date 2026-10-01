@@ -3,6 +3,7 @@ const NodeCache = require('node-cache')
 const { searchNyaa } = require('./nyaa')
 const { parseEpisode, parseQuality, isBatch } = require('./parse')
 const { getKitsuTitle } = require('./kitsu')
+const { resolveImdbToAnime } = require('./animeMap')
 
 const PREFERRED_QUALITY = '1080p' // will become a config option later
 
@@ -19,7 +20,7 @@ const manifest = {
     resources: ['stream'],
     types: ['series', 'movie'],
     catalogs: [], // intentionally empty - streams only, relies on other addons' catalogs
-    idPrefixes: ['kitsu:']
+    idPrefixes: ['kitsu:', 'tt']
 }
 
 const builder = new addonBuilder(manifest)
@@ -27,29 +28,67 @@ const builder = new addonBuilder(manifest)
 builder.defineStreamHandler(async ({ type, id }) => {
     console.log('[stream]', type, id)
 
-    // id arrives as "kitsu:12345" (movie) or "kitsu:12345:5" (series episode)
-    const parts = id.split(':') // ['kitsu', '12345', '5']
-    const kitsuId = parts[1]
-    const episode = parts[2] ? parseInt(parts[2], 10) : null
+    let kitsuId, episode, season
+    
+    if (id.startsWith('kitsu:')) {
+        // "kitsu:12345" (movie) or "kitsu:12345:5" (series episode)
+        const parts = id.split(':')
+        kitsuId = parts[1]
+        episode = parts[2] ? parseInt(parts[2], 10) : null
+        season = null  // kitsu IDs don't have seasons, assume S1
+    } else if (id.startsWith('tt')) {
+        // "tt0102847" (movie) or "tt0102847:2:5" (series: imdb:season:episode)
+        const parts = id.split(':')
+        const imdbId = parts[0]
+        season = parts[1] ? parseInt(parts[1], 10) : null
+        episode = parts[2] ? parseInt(parts[2], 10) : null
 
-    if (!kitsuId) {
-        console.log('[stream] malformed id, no kitsu id found:', id)
+        let entry
+        try {
+            entry = await resolveImdbToAnime(imdbId, season)
+        } catch (err) {
+            console.error('[stream] anime-list mapping lookup failed:', err.message)
+            return { streams: [] }
+        }
+
+        if (!entry || !entry.kitsu_id) {
+            console.log(`[stream] no kitsu mapping found for ${imdbId} season ${season} - not anime, or not in dataset`)
+            return { streams: [] }
+        }
+
+        kitsuId = entry.kitsu_id
+        console.log(`[stream] resolved ${imdbId} season ${season} -> kitsu:${kitsuId} (anidb ${entry.anidb_id})`)
+    } else {
+        console.log('[stream] unrecognized id prefix:', id)
         return { streams: [] }
     }
 
-    let title
+    if (!kitsuId) {
+        console.log('[stream] no kitsu id resolved for:', id)
+        return { streams: [] }
+    }
+
+    let title, titleData
     try {
-        title = await getKitsuTitle(kitsuId)
+        titleData = await getKitsuTitle(kitsuId)
+        title = titleData.title
     } catch (err) {
         console.error('[stream] kitsu title lookup failed:', err.message)
         return { streams: [] }
     }
 
-    const cacheKey = kitsuId
+    // Use season+episode as cache key to avoid conflicts
+    const cacheKey = season && episode ? `${kitsuId}:s${season}e${episode}` : kitsuId
     let results = searchCache.get(cacheKey)
     if (!results) {
         try {
-            results = await searchNyaa(title)
+            // Search with full season+episode for targeted results
+            let searchQuery = title
+            if (season && episode) {
+                searchQuery = `${title} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
+            }
+            console.log(`[nyaa] searching: "${searchQuery}"`)
+            results = await searchNyaa(searchQuery)
             searchCache.set(cacheKey, results)
         } catch (err) {
             console.error('[stream] nyaa search failed:', err.message)

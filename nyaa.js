@@ -15,14 +15,15 @@ const FILTERS = {
     TRUSTED_ONLY: 2
 }
 
-async function searchNyaa(query, opts ={}) {
+async function searchNyaa(query, opts = {}) {
     const {
-        catagory = CATAGORIES.ANIME_RAW,
-        filter = FILTERS.NO_REMAKES,
+        catagory = CATAGORIES.ANIME,
+        filter = FILTERS.NONE,
         sort = 'seeders',
         order = 'desc'
     } = opts
 
+    console.log(`[nyaa] searching for: "${query}"`)
     const url = 'https://nyaa.si/?page=rss'
     const res = await axios.get(url, {
         params: {
@@ -37,6 +38,7 @@ async function searchNyaa(query, opts ={}) {
     const parsed = await xml2js.parseStringPromise(res.data)
     const items = parsed?.rss?.channel?.[0]?.item || []
 
+    console.log(`[nyaa] got ${items.length} results`)
     return items.map(item => ({
         title: item.title?.[0],
         link: item.link?.[0],
