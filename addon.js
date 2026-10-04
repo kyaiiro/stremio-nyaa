@@ -2,8 +2,8 @@ const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
 const NodeCache = require('node-cache')
 const { searchNyaa } = require('./nyaa')
 const { parseEpisode, parseQuality, isBatch } = require('./parse')
-const { getKitsuTitle } = require('./kitsu')
 const { resolveImdbToAnime } = require('./animeMap')
+const { getKitsuTitle } = require('./kitsu')
 
 const PREFERRED_QUALITY = '1080p' // will become a config option later
 
@@ -28,22 +28,29 @@ const builder = new addonBuilder(manifest)
 builder.defineStreamHandler(async ({ type, id }) => {
     console.log('[stream]', type, id)
 
-    let kitsuId, episode, season
-    
+    let kitsuId, episode, season, entry = null
+
     if (id.startsWith('kitsu:')) {
-        // "kitsu:12345" (movie) or "kitsu:12345:5" (series episode)
         const parts = id.split(':')
         kitsuId = parts[1]
         episode = parts[2] ? parseInt(parts[2], 10) : null
-        season = null  // kitsu IDs don't have seasons, assume S1
+        season = 1 // default for direct kitsu IDs
+
+        try {
+            entry = {
+                title: (await getKitsuTitle(kitsuId)).title,
+                kitsu_id: kitsuId
+            }
+        } catch (err) {
+            console.error('[stream] kitsu title lookup failed:', err.message)
+            return { streams: [] }
+        }
     } else if (id.startsWith('tt')) {
-        // "tt0102847" (movie) or "tt0102847:2:5" (series: imdb:season:episode)
         const parts = id.split(':')
         const imdbId = parts[0]
         season = parts[1] ? parseInt(parts[1], 10) : null
         episode = parts[2] ? parseInt(parts[2], 10) : null
 
-        let entry
         try {
             entry = await resolveImdbToAnime(imdbId, season)
         } catch (err) {
@@ -51,15 +58,20 @@ builder.defineStreamHandler(async ({ type, id }) => {
             return { streams: [] }
         }
 
-        if (!entry || !entry.kitsu_id) {
-            console.log(`[stream] no kitsu mapping found for ${imdbId} season ${season} - not anime, or not in dataset`)
+        if (!entry || !entry.kitsu_id || !entry.title) {
+            console.log('[stream] no usable animeMap entry/title found')
             return { streams: [] }
         }
 
         kitsuId = entry.kitsu_id
-        console.log(`[stream] resolved ${imdbId} season ${season} -> kitsu:${kitsuId} (anidb ${entry.anidb_id})`)
     } else {
         console.log('[stream] unrecognized id prefix:', id)
+        return { streams: [] }
+    }
+
+    const title = entry?.title
+    if (!title) {
+        console.error('[stream] no usable title found')
         return { streams: [] }
     }
 
@@ -68,33 +80,16 @@ builder.defineStreamHandler(async ({ type, id }) => {
         return { streams: [] }
     }
 
-    let title, titleData
-    try {
-        titleData = await getKitsuTitle(kitsuId)
-        title = titleData.title
-    } catch (err) {
-        console.error('[stream] kitsu title lookup failed:', err.message)
-        return { streams: [] }
-    }
+    const effectiveSeason = season ?? 1
+    const cacheKey = episode ? `${kitsuId}:s${effectiveSeason}e${episode}` : kitsuId
 
-    // Use season+episode as cache key to avoid conflicts
-    const cacheKey = season && episode ? `${kitsuId}:s${season}e${episode}` : kitsuId
-    let results = searchCache.get(cacheKey)
-    if (!results) {
-        try {
-            // Search with full season+episode for targeted results
-            let searchQuery = title
-            if (season && episode) {
-                searchQuery = `${title} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
-            }
-            console.log(`[nyaa] searching: "${searchQuery}"`)
-            results = await searchNyaa(searchQuery)
-            searchCache.set(cacheKey, results)
-        } catch (err) {
-            console.error('[stream] nyaa search failed:', err.message)
-            return { streams: [] }
-        }
+    let searchQuery = title
+    if (episode) {
+        searchQuery = `${title} S${String(effectiveSeason).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
     }
+    console.log(`[nyaa] searching: "${searchQuery}"`)
+    let results = await searchNyaa(searchQuery)
+    searchCache.set(cacheKey, results)
 
     let matches
     if (type === 'movie' || episode === null) {
