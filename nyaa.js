@@ -23,7 +23,6 @@ async function searchNyaa(query, opts = {}) {
         order = 'desc'
     } = opts
 
-    console.log(`[nyaa] searching for: "${query}"`)
     const url = 'https://nyaa.si/?page=rss'
     const res = await axios.get(url, {
         params: {
@@ -57,10 +56,10 @@ async function searchNyaa(query, opts = {}) {
 
 function toMagnet(infoHash, title) {
     const trackers = [
-        'udp://tracker.opentrackr.org:1337/announce',
+        'udp://tracker.opentracker.org:1337/announce',
         'udp://tracker.openbittorrent.com:6969/announce',
         'udp://exodus.desync.com:6969/announce',
-        'udp://tracker.torrent.eu.org:451/announce'
+        `udp://tracker.torrent.eu.org:451/announce`
     ]
     const tr = trackers.map(t => `&tr=${encodeURIComponent(t)}`).join('')
     return `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(title)}${tr}`
