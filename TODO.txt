@@ -1,2 +1,1 @@
-TODO add nekobt or animetosho support
 TODO add config on setup (res, lang and providers)
