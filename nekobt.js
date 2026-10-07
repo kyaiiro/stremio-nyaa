@@ -15,6 +15,16 @@ const SORT = {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+function formatSize(bytes) {
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+    let i = 0
+    while (bytes >= 1024 && i < units.length - 1) {
+        bytes /= 1024
+        i++
+    }
+    return `${bytes.toFixed(i === 0 ? 0 : 2)} ${units[i]}`
+}
+
 async function getWithRetry(url, config, tries = 3) {
     for (let i = 0; i < tries; i++) {
         try {
@@ -70,7 +80,7 @@ async function searchNekoBT(query, opts = {}) {
         link: `https://nekobt.to/torrents/${item.id}`,
         torrentUrl: `${BASE_URL}/torrents/${item.id}/download?public=true`,
         magnet: item.magnet,
-        size: parseInt(item.filesize || '0', 10),
+        size: formatSize(parseInt(item.filesize) || '0', 10),
         seeders: parseInt(item.seeders || '0', 10),
         leechers: parseInt(item.leechers || '0', 10),
         downloads: parseInt(item.completed || '0', 10),
