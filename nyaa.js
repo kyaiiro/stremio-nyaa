@@ -50,7 +50,8 @@ async function searchNyaa(query, opts = {}) {
         infoHash: item['nyaa:infoHash']?.[0],
         catagory: item['nyaa:catagory']?.[0],
         trusted: item['nyaa:trusted']?.[0] === 'Yes',
-        remake: item['nyaa:remake']?.[0] === 'Yes'
+        remake: item['nyaa:remake']?.[0] === 'Yes',
+        source: "nyaa"
     }))
 }
 

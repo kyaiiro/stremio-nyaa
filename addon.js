@@ -2,6 +2,7 @@ const { types } = require('node:util')
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
 const { resolveImdbToAnime } = require('./animeMap')
 const { searchNyaa } = require('./nyaa')
+const { searchNekoBT } = require('./nekobt')
 const { parseEpisode, parseQuality, isBatch } = require('./parse')
 
 const PREFERRED_QUALITY = '1080p' // will become a config option later
@@ -56,8 +57,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
         searchQuery = `${title} S${String(effectiveSeason).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
     }
     console.log(`[nyaa] searching: "${searchQuery}"`)
-    let results = await searchNyaa(searchQuery)
-    
+    let nyaa_results = await searchNyaa(searchQuery)
+    let nekobt_results = await searchNekoBT(searchQuery)
+    let results = [...nyaa_results, ...nekobt_results]
+
     let matches
     if (type === 'movie' || episode === null) {
         matches = results.filter(r => !isBatch(r.title) && r.infoHash)
@@ -77,7 +80,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
     })
 
     const streams = matches.slice(0, 10).map(r => ({
-        title: `${r.title}\n👤 ${r.seeders} seeders | 💾 ${r.size}`,
+        title: `${r.title}\n👤 ${r.seeders} seeders | 💾 ${r.size} | ${r.source}`,
         infoHash: r.infoHash
     }))
 
