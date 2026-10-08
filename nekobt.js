@@ -45,12 +45,44 @@ async function getWithRetry(url, config, tries = 3) {
     }
 }
 
+async function getSearchData(query, params) {
+    const res = await getWithRetry(`${BASE_URL}/torrents/search`, {
+        params,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+    })
+
+    if (res.data?.error) throw new Error(res.data.message)
+    return res.data?.data || {}
+}
+
+function mapTorrent(item) {
+    return {
+        id: item.id,
+        title: item.title,
+        link: `https://nekobt.to/torrents/${item.id}`,
+        torrentUrl: `${BASE_URL}/torrents/${item.id}/download?public=true`,
+        magnet: item.magnet,
+        size: formatSize(parseInt(item.filesize, 10) || 0),
+        seeders: parseInt(item.seeders || '0', 10),
+        leechers: parseInt(item.leechers || '0', 10),
+        downloads: parseInt(item.completed || '0', 10),
+        infoHash: item.infohash,
+        importedFromNyaa: item.imported || null,
+        nyaaUploadTime: item.nyaa_upload_time
+            ? new Date(parseInt(item.nyaa_upload_time, 10)).toISOString()
+            : null,
+        source: 'nekobt'
+    }
+}
+
 async function searchNekoBT(query, opts = {}) {
     const {
         sort = SORT.SEEDERS,
         order = 'desc',
         limit = 50,
-        offset = 0
+        offset = 0,
+        season,
+        episode
     } = opts
 
     const sortBy = order === 'asc' && ![SORT.BEST, SORT.LATEST, SORT.OLDEST].includes(sort)
@@ -64,33 +96,49 @@ async function searchNekoBT(query, opts = {}) {
         sort_by: sortBy
     }
 
-    const res = await getWithRetry(`${BASE_URL}/torrents/search`, {
-        params,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-    })
+    let data = await getSearchData(query, params)
+    let items = data.results || []
 
-    if (res.data?.error) throw new Error(res.data.message)
+    if (season != null && episode != null) {
+        const mediaId = data.media?.id
+            || data.recommended_media?.id
+            || data.similar_media?.[0]?.id
+            || items.find(item => item.media_id)?.media_id
 
-    const items = res.data?.data?.results || []
+        if (mediaId) {
+            let episodes = data.episodes || []
+            if (!episodes.length) {
+                const mediaData = await getSearchData(query, {
+                    ...params,
+                    media_id: mediaId,
+                    limit: 1
+                })
+                episodes = mediaData.episodes || []
+            }
+
+            const matchedEpisode = episodes.find(item =>
+                Number(item.season) === Number(season)
+                && Number(item.episode) === Number(episode)
+            )
+
+            if (matchedEpisode) {
+                const episodeData = await getSearchData(query, {
+                    ...params,
+                    media_id: mediaId,
+                    episode_ids: matchedEpisode.id
+                })
+                if (episodeData.results?.length) items = episodeData.results
+                console.log(`[nekobt] filtered by media ${mediaId}, episode ${matchedEpisode.id}`)
+            } else {
+                console.warn(`[nekobt] couldn't map S${season}E${episode} for media ${mediaId}`)
+            }
+        } else {
+            console.warn(`[nekobt] couldn't resolve media for S${season}E${episode}`)
+        }
+    }
+
     console.log(`[nekobt] got ${items.length} results`)
-
-    return items.map(item => ({
-        id: item.id,
-        title: item.title,
-        link: `https://nekobt.to/torrents/${item.id}`,
-        torrentUrl: `${BASE_URL}/torrents/${item.id}/download?public=true`,
-        magnet: item.magnet,
-        size: formatSize(parseInt(item.filesize) || '0', 10),
-        seeders: parseInt(item.seeders || '0', 10),
-        leechers: parseInt(item.leechers || '0', 10),
-        downloads: parseInt(item.completed || '0', 10),
-        infoHash: item.infohash,
-        importedFromNyaa: item.imported || null,
-        nyaaUploadTime: item.nyaa_upload_time
-            ? new Date(parseInt(item.nyaa_upload_time, 10)).toISOString()
-            : null,
-        source: "nekobt"
-    }))
+    return items.map(mapTorrent)
 }
 
 function toMagnet(infoHash, title) {

@@ -57,7 +57,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
     }
     console.log(`[nyaa] searching: "${searchQuery}"`)
     let nyaa_results = await searchNyaa(searchQuery)
-    let nekobt_results = await searchNekoBT(searchQuery)
+    let nekobt_results = await searchNekoBT(title, episode ? {
+        season: effectiveSeason,
+        episode: Number(episode)
+    } : {})
     let results = [...nyaa_results, ...nekobt_results]
 
     let matches
@@ -71,12 +74,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
         })
     }
 
-    matches.sort((a, b) => {
-        const aPerf = parseQuality(a.title) === PREFERRED_QUALITY ? 1 : 0
-        const bPerf = parseQuality(b.title) === PREFERRED_QUALITY ? 1 : 0
-        if (aPerf !== bPerf) return bPerf - aPerf
-        return b.seeders - a.seeders
-    })
+    matches.sort((a, b) => b.seeders - a.seeders)
 
     const streams = matches.slice(0, 10).map(r => ({
         title: `${r.title}\n👤 ${r.seeders} seeders | 💾 ${r.size} | ${r.source}`,
