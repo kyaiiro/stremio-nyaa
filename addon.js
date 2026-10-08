@@ -1,4 +1,3 @@
-const { types } = require('node:util')
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
 const { resolveImdbToAnime } = require('./animeMap')
 const { searchNyaa } = require('./nyaa')
