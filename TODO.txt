@@ -1,2 +1,2 @@
 TODO add caching
-TODO add config on setup (res, lang and providers)
+TODO add batches
